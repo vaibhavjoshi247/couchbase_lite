@@ -38,15 +38,15 @@ abstract class Brewery implements Built<Brewery, BreweryBuilder> {
     return json.encode(toMap());
   }
 
-  Map toMap() {
+  Map? toMap() {
     return standardSerializers.serializeWith(Brewery.serializer, this);
   }
 
-  static Brewery fromJson(String jsonString) {
+  static Brewery? fromJson(String jsonString) {
     return fromMap(json.decode(jsonString));
   }
 
-  static Brewery fromMap(Map jsonMap) {
+  static Brewery? fromMap(Map jsonMap) {
     return standardSerializers.deserializeWith(Brewery.serializer, jsonMap);
   }
 

@@ -15,9 +15,9 @@ class _$BeerSerializer implements StructuredSerializer<Beer> {
   final String wireName = 'Beer';
 
   @override
-  Iterable<Object> serialize(Serializers serializers, Beer object,
+  Iterable<Object?> serialize(Serializers serializers, Beer object,
       {FullType specifiedType = FullType.unspecified}) {
-    final result = <Object>[
+    final result = <Object?>[
       'beerID',
       serializers.serialize(object.beerID,
           specifiedType: const FullType(String)),
@@ -29,7 +29,7 @@ class _$BeerSerializer implements StructuredSerializer<Beer> {
   }
 
   @override
-  Beer deserialize(Serializers serializers, Iterable<Object> serialized,
+  Beer deserialize(Serializers serializers, Iterable<Object?> serialized,
       {FullType specifiedType = FullType.unspecified}) {
     final result = new BeerBuilder();
 
@@ -37,7 +37,7 @@ class _$BeerSerializer implements StructuredSerializer<Beer> {
     while (iterator.moveNext()) {
       final key = iterator.current as String;
       iterator.moveNext();
-      final dynamic value = iterator.current;
+      final Object? value = iterator.current;
       switch (key) {
         case 'beerID':
           result.beerID = serializers.deserialize(value,
@@ -60,16 +60,12 @@ class _$Beer extends Beer {
   @override
   final String name;
 
-  factory _$Beer([void Function(BeerBuilder) updates]) =>
+  factory _$Beer([void Function(BeerBuilder)? updates]) =>
       (new BeerBuilder()..update(updates)).build();
 
-  _$Beer._({this.beerID, this.name}) : super._() {
-    if (beerID == null) {
-      throw new BuiltValueNullFieldError('Beer', 'beerID');
-    }
-    if (name == null) {
-      throw new BuiltValueNullFieldError('Beer', 'name');
-    }
+  _$Beer._({required this.beerID, required this.name}) : super._() {
+    BuiltValueNullFieldError.checkNotNull(beerID, 'Beer', 'beerID');
+    BuiltValueNullFieldError.checkNotNull(name, 'Beer', 'name');
   }
 
   @override
@@ -100,22 +96,23 @@ class _$Beer extends Beer {
 }
 
 class BeerBuilder implements Builder<Beer, BeerBuilder> {
-  _$Beer _$v;
+  _$Beer? _$v;
 
-  String _beerID;
-  String get beerID => _$this._beerID;
-  set beerID(String beerID) => _$this._beerID = beerID;
+  String? _beerID;
+  String? get beerID => _$this._beerID;
+  set beerID(String? beerID) => _$this._beerID = beerID;
 
-  String _name;
-  String get name => _$this._name;
-  set name(String name) => _$this._name = name;
+  String? _name;
+  String? get name => _$this._name;
+  set name(String? name) => _$this._name = name;
 
   BeerBuilder();
 
   BeerBuilder get _$this {
-    if (_$v != null) {
-      _beerID = _$v.beerID;
-      _name = _$v.name;
+    final $v = _$v;
+    if ($v != null) {
+      _beerID = $v.beerID;
+      _name = $v.name;
       _$v = null;
     }
     return this;
@@ -123,20 +120,22 @@ class BeerBuilder implements Builder<Beer, BeerBuilder> {
 
   @override
   void replace(Beer other) {
-    if (other == null) {
-      throw new ArgumentError.notNull('other');
-    }
+    ArgumentError.checkNotNull(other, 'other');
     _$v = other as _$Beer;
   }
 
   @override
-  void update(void Function(BeerBuilder) updates) {
+  void update(void Function(BeerBuilder)? updates) {
     if (updates != null) updates(this);
   }
 
   @override
   _$Beer build() {
-    final _$result = _$v ?? new _$Beer._(beerID: beerID, name: name);
+    final _$result = _$v ??
+        new _$Beer._(
+            beerID:
+                BuiltValueNullFieldError.checkNotNull(beerID, 'Beer', 'beerID'),
+            name: BuiltValueNullFieldError.checkNotNull(name, 'Beer', 'name'));
     replace(_$result);
     return _$result;
   }
