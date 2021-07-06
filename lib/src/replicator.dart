@@ -4,16 +4,17 @@ enum ReplicatorActivityLevel { busy, idle, offline, stopped, connecting }
 
 class Replicator {
   Replicator(this.config) {
+    //this.config._isLocked = true;
     _storingReplicator = _jsonChannel.invokeMethod('storeReplicator', this);
   }
 
   static const MethodChannel _methodChannel =
-      const MethodChannel('com.saltechsystems.couchbase_lite/replicator');
-  static const JSONMethodCodec _jsonMethod = const JSONMethodCodec();
-  static const MethodChannel _jsonChannel = const MethodChannel(
-      'com.saltechsystems.couchbase_lite/json', _jsonMethod);
-  static const EventChannel _replicationEventChannel = const EventChannel(
-      "com.saltechsystems.couchbase_lite/replicationEventChannel");
+      MethodChannel('com.saltechsystems.couchbase_lite/replicator');
+  static const JSONMethodCodec _jsonMethod = JSONMethodCodec();
+  static const MethodChannel _jsonChannel =
+      MethodChannel('com.saltechsystems.couchbase_lite/json', _jsonMethod);
+  static const EventChannel _replicationEventChannel =
+      EventChannel('com.saltechsystems.couchbase_lite/replicationEventChannel');
   static final Stream _replicationStream =
       _replicationEventChannel.receiveBroadcastStream();
 
@@ -21,7 +22,7 @@ class Replicator {
   Map<ListenerToken, StreamSubscription> tokens = {};
 
   final ReplicatorConfiguration config;
-  Future<void> _storingReplicator;
+  Future<void>? _storingReplicator;
 
   /// Starts the replicator.
   ///
@@ -59,16 +60,33 @@ class Replicator {
   ListenerToken addChangeListener(Function(ReplicatorChange) callback) {
     var token = ListenerToken();
     tokens[token] = _replicationStream
-        .where((data) => data["replicator"] == replicatorId)
+        .where((data) => (data['replicator'] == replicatorId &&
+            data['type'] == 'ReplicatorChange'))
         .listen((data) {
-      var activity = ReplicatorStatus.activityFromString(data["activity"]);
-      String error;
-      if (data["error"] is String) {
-        error = data["error"];
+      var activity = ReplicatorStatus.activityFromString(data['activity']);
+      String? error;
+      if (data['error'] is String) {
+        error = data['error'];
       }
 
       callback(
           ReplicatorChange(this, ReplicatorStatus._internal(activity, error)));
+    });
+    return token;
+  }
+
+  /// Adds a document replicator change listener.
+  ///
+  /// Returns the listener token object for removing the listener.
+  ListenerToken addDocumentReplicationListener(
+      Function(DocumentReplication) callback) {
+    var token = ListenerToken();
+    tokens[token] = _replicationStream
+        .where((data) => ((data['replicator'] == replicatorId &&
+            data['type'] == 'DocumentReplication')))
+        .listen((data) {
+      callback(DocumentReplication.fromMap(data)!
+          .rebuild((b) => b..replicator = this));
     });
     return token;
   }
@@ -97,31 +115,31 @@ class Replicator {
   }
 
   Map<String, dynamic> toJson() {
-    return {"replicatorId": replicatorId, "config": config};
+    return {'replicatorId': replicatorId, 'config': config};
   }
 }
 
 class ReplicatorStatus {
   ReplicatorStatus._internal(this.activity, this.error);
 
-  final ReplicatorActivityLevel activity;
-  final String error;
+  final ReplicatorActivityLevel? activity;
+  final String? error;
 
-  static ReplicatorActivityLevel activityFromString(String _status) {
+  static ReplicatorActivityLevel? activityFromString(String? _status) {
     switch (_status) {
-      case "BUSY":
+      case 'BUSY':
         return ReplicatorActivityLevel.busy;
         break;
-      case "IDLE":
+      case 'IDLE':
         return ReplicatorActivityLevel.idle;
         break;
-      case "OFFLINE":
+      case 'OFFLINE':
         return ReplicatorActivityLevel.offline;
         break;
-      case "STOPPED":
+      case 'STOPPED':
         return ReplicatorActivityLevel.stopped;
         break;
-      case "CONNECTING":
+      case 'CONNECTING':
         return ReplicatorActivityLevel.connecting;
         break;
     }

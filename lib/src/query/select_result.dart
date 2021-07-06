@@ -11,19 +11,19 @@ class SelectResult {
 }
 
 class SelectResultProtocol {
-  SelectResultProtocol(Expression expression, {String alias}) {
+  SelectResultProtocol(Expression expression, {String? alias}) {
     this.expression = expression;
     this.alias = alias;
   }
 
-  Expression expression;
-  String alias;
+  late Expression expression;
+  String? alias;
 
   List<Map<String, dynamic>> toJson() {
     if (alias != null) {
       return expression.internalExpressionStack +
           [
-            {"as": alias}
+            {'as': alias}
           ];
     } else {
       return expression.internalExpressionStack;
@@ -32,16 +32,16 @@ class SelectResultProtocol {
 }
 
 class SelectResultAs extends SelectResultProtocol {
-  SelectResultAs(Expression expression, String alias)
+  SelectResultAs(Expression expression, String? alias)
       : super(expression, alias: alias);
 
   SelectResultProtocol as(String _alias) {
-    return SelectResultProtocol(this.expression, alias: _alias);
+    return SelectResultProtocol(expression, alias: _alias);
   }
 }
 
 class SelectResultFrom extends SelectResultProtocol {
-  SelectResultFrom(Expression expression, String alias)
+  SelectResultFrom(Expression expression, String? alias)
       : super(expression, alias: alias);
 
   SelectResultProtocol from(String _alias) {

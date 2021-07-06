@@ -2,41 +2,41 @@ part of couchbase_lite;
 
 class From extends Query {
   Where where(Expression expression) {
-    var resultQuery = new Where();
-    resultQuery._options = this.options;
-    resultQuery._options["where"] = expression;
+    var resultQuery = Where();
+    resultQuery._options = options;
+    resultQuery._options['where'] = expression;
     return resultQuery;
   }
 
   GroupBy groupBy(List<Expression> expressionList) {
-    var resultQuery = new GroupBy();
-    resultQuery._options = this.options;
-    resultQuery._options["groupBy"] = expressionList;
+    var resultQuery = GroupBy();
+    resultQuery._options = options;
+    resultQuery._options['groupBy'] = expressionList;
     return resultQuery;
   }
 
   Joins join(Join expression) {
-    var resultQuery = new Joins();
-    resultQuery._options = this.options;
-    resultQuery._options["joins"] = expression;
+    var resultQuery = Joins();
+    resultQuery._options = options;
+    resultQuery._options['joins'] = expression;
     return resultQuery;
   }
 
-  Limit limit(Expression expression, {Expression offset}) {
-    var resultQuery = new Limit();
-    resultQuery._options = this.options;
+  Limit limit(Expression expression, {Expression? offset}) {
+    var resultQuery = Limit();
+    resultQuery._options = options;
     if (offset != null) {
-      resultQuery._options["limit"] = [expression, offset];
+      resultQuery._options['limit'] = [expression, offset];
     } else {
-      resultQuery._options["limit"] = [expression];
+      resultQuery._options['limit'] = [expression];
     }
     return resultQuery;
   }
 
   OrderBy orderBy(List<Ordering> orderingList) {
-    var resultQuery = new OrderBy();
-    resultQuery._options = this.options;
-    resultQuery._options["orderBy"] = orderingList;
+    var resultQuery = OrderBy();
+    resultQuery._options = options;
+    resultQuery._options['orderBy'] = orderingList;
     return resultQuery;
   }
 }

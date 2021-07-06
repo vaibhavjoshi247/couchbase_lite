@@ -1,5 +1,7 @@
 package com.saltechsystems.couchbase_lite;
 
+import com.couchbase.lite.ArrayExpression;
+import com.couchbase.lite.ArrayFunction;
 import android.util.Log;
 
 import com.couchbase.lite.ArrayExpression;
@@ -7,6 +9,9 @@ import com.couchbase.lite.ArrayFunction;
 import com.couchbase.lite.DataSource;
 import com.couchbase.lite.Expression;
 import com.couchbase.lite.From;
+import com.couchbase.lite.Function;
+import com.couchbase.lite.FullTextExpression;
+import com.couchbase.lite.FullTextFunction;
 import com.couchbase.lite.Function;
 import com.couchbase.lite.GroupBy;
 import com.couchbase.lite.Join;
@@ -18,6 +23,7 @@ import com.couchbase.lite.Ordering;
 import com.couchbase.lite.PropertyExpression;
 import com.couchbase.lite.Query;
 import com.couchbase.lite.QueryBuilder;
+import com.couchbase.lite.Result;
 import com.couchbase.lite.ResultSet;
 import com.couchbase.lite.Select;
 import com.couchbase.lite.SelectResult;
@@ -32,6 +38,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import io.flutter.plugin.common.JSONUtil;
 
@@ -45,13 +52,54 @@ class QueryJson {
         this.queryMap = new QueryMap(json);
     }
 
-    static List<Map<String, Object>> resultsToJson(ResultSet results) {
-        List<Map<String, Object>> rtnList = new ArrayList<>();
-        for (final com.couchbase.lite.Result rslt : results) {
+    static List<Map<String,Object>> resultsToJson(ResultSet results) {
+        List<Map<String,Object>> rtnList = new ArrayList<>();
+        for (final com.couchbase.lite.Result result:results) {
             HashMap<String, Object> value = new HashMap<>();
-            value.put("map", rslt.toMap());
-            value.put("list", rslt.toList());
+
+            /*
+            null values are handled differently between swift and java
+            this was an attempt to fix this issue
+            HashMap<Object, Integer> resultIndexes = new HashMap<>();
+            for (int idx = 0; idx < result.count(); idx++) {
+                resultIndexes.put(result.getValue(idx),idx);
+            }
+
+            HashMap<String, Integer> resultMap = new HashMap<>();
+            for (String key: result.getKeys()) {
+                Integer resultIndex = resultIndexes.get(result.getValue(key));
+                if (resultIndex != null) {
+                    resultMap.put(key, resultIndex);
+                }
+            }
+
+            value.put("map",resultMap);
+            */
+            value.put("map",_resultToMap(result));
+            value.put("list",_resultToList(result));
+            value.put("keys",result.getKeys());
             rtnList.add(value);
+        }
+
+        return rtnList;
+    }
+
+    private static Map<String,Object> _resultToMap(Result result) {
+        HashMap<String, Object> rtnMap = new HashMap<>();
+        for (String key: result.getKeys()) {
+            Object value = result.getValue(key);
+            if (value != null) {
+                rtnMap.put(key, CBManager.convertGETValue(value));
+            }
+        }
+
+        return rtnMap;
+    }
+
+    private static List<Object> _resultToList(Result result) {
+        List<Object> rtnList = new ArrayList<>();
+        for (int idx = 0; idx < result.count(); idx++) {
+            rtnList.add(CBManager.convertGETValue(result.getValue(idx)));
         }
 
         return rtnList;
@@ -153,12 +201,13 @@ class QueryJson {
     private Ordering[] inflateOrdering(List<List<Map<String, Object>>> orderByArray) {
         List<Ordering> resultOrdering = new ArrayList<>();
         for (List<Map<String, Object>> currentOrderByArgument : orderByArray) {
-            Map<String, Object> last = currentOrderByArgument.get(currentOrderByArgument.size() - 1);
+            Map<String,Object> last = currentOrderByArgument.get(currentOrderByArgument.size() -1);
             Expression orderingExpression = inflateExpressionFromArray(currentOrderByArgument);
             Ordering.SortOrder ordering = Ordering.expression(orderingExpression);
 
             if (last.containsKey("orderingSortOrder")) {
                 String orderingSortOrder = (String) last.get("orderingSortOrder");
+                assert orderingSortOrder != null;
                 if (orderingSortOrder.equals("ascending")) {
                     resultOrdering.add(ordering.ascending());
                 } else if (orderingSortOrder.equals("descending")) {
@@ -181,35 +230,35 @@ class QueryJson {
         if (joinArguments.containsKey("join")) {
             databaseName = (String) joinArguments.get("join");
             if (alias != null) {
-                join = Join.join(getDatasourceFromString(databaseName, alias));
+                join = Join.join(getDatasourceFromString(databaseName,alias));
             } else {
                 join = Join.join(getDatasourceFromString(databaseName));
             }
         } else if (joinArguments.containsKey("crossJoin")) {
             databaseName = (String) joinArguments.get("crossJoin");
             if (alias != null) {
-                join = Join.crossJoin(getDatasourceFromString(databaseName, alias));
+                join = Join.crossJoin(getDatasourceFromString(databaseName,alias));
             } else {
                 join = Join.crossJoin(getDatasourceFromString(databaseName));
             }
         } else if (joinArguments.containsKey("innerJoin")) {
             databaseName = (String) joinArguments.get("innerJoin");
             if (alias != null) {
-                join = Join.innerJoin(getDatasourceFromString(databaseName, alias));
+                join = Join.innerJoin(getDatasourceFromString(databaseName,alias));
             } else {
                 join = Join.innerJoin(getDatasourceFromString(databaseName));
             }
         } else if (joinArguments.containsKey("leftJoin")) {
             databaseName = (String) joinArguments.get("leftJoin");
             if (alias != null) {
-                join = Join.leftJoin(getDatasourceFromString(databaseName, alias));
+                join = Join.leftJoin(getDatasourceFromString(databaseName,alias));
             } else {
                 join = Join.leftJoin(getDatasourceFromString(databaseName));
             }
         } else if (joinArguments.containsKey("leftOuterJoin")) {
             databaseName = (String) joinArguments.get("leftOuterJoin");
             if (alias != null) {
-                join = Join.leftOuterJoin(getDatasourceFromString(databaseName, alias));
+                join = Join.leftOuterJoin(getDatasourceFromString(databaseName,alias));
             } else {
                 join = Join.leftOuterJoin(getDatasourceFromString(databaseName));
             }
@@ -231,7 +280,7 @@ class QueryJson {
         String alias = (String) queryMap.from.get("as");
 
         if (alias != null) {
-            query = ((Select) query).from(getDatasourceFromString(databaseName, alias));
+            query = ((Select) query).from(getDatasourceFromString(databaseName,alias));
         } else {
             query = ((Select) query).from(getDatasourceFromString(databaseName));
         }
@@ -266,7 +315,7 @@ class QueryJson {
     private SelectResult inflateSelectResult(List<Map<String, Object>> selectResultParametersArray) {
         SelectResult.As result = SelectResult.expression(inflateExpressionFromArray(selectResultParametersArray));
 
-        String alias = (String) selectResultParametersArray.get(selectResultParametersArray.size() - 1).get("as");
+        String alias = (String) selectResultParametersArray.get(selectResultParametersArray.size()-1).get("as");
         if (alias != null) {
             return result.as(alias);
         }
@@ -283,7 +332,7 @@ class QueryJson {
         }
     }
 
-    private Expression inflateExpressionFromArray(List<Map<String, Object>> expressionParametersArray) {
+    static Expression inflateExpressionFromArray(List<Map<String, Object>> expressionParametersArray) {
         Expression returnExpression = null;
         for (int i = 0; i <= expressionParametersArray.size() - 1; i++) {
             Map<String, Object> currentExpression = expressionParametersArray.get(i);
@@ -298,14 +347,14 @@ class QueryJson {
                         }
                         break;
                     case ("meta"):
-                        if (currentExpression.get("meta").equals("id")) {
+                        if (Objects.equals(currentExpression.get("meta"), "id")) {
                             returnExpression = Meta.id;
-                        } else if (currentExpression.get("meta").equals("sequence")) {
+                        } else if (Objects.equals(currentExpression.get("meta"), "sequence")) {
                             returnExpression = Meta.sequence;
                         }
                         break;
                     case ("booleanValue"):
-                        returnExpression = Expression.booleanValue((Boolean) currentExpression.get("booleanValue"));
+                        returnExpression = Expression.booleanValue((boolean) currentExpression.get("booleanValue"));
                         break;
                     case ("date"):
                         returnExpression = Expression.date((Date) currentExpression.get("date"));
@@ -331,26 +380,144 @@ class QueryJson {
                     case ("arrayVariable"):
                         returnExpression = ArrayExpression.variable(String.valueOf(currentExpression.get("arrayVariable")));
                         break;
-                    case ("count")://SelectResult.expression(Functions.count(Expression.string("*")))
+                    case ("arrayLength"):
+                        returnExpression = ArrayFunction.length(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("arrayLength"))));
+                        break;
+                    case ("arrayContains"):
+                        returnExpression = ArrayFunction.contains(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("arrayContains"))), inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("value"))));
+                        break;
+                    case ("rank"):
+                        returnExpression = FullTextFunction.rank((String)currentExpression.get("rank"));
+                        break;
+                    case ("abs"):
+                        returnExpression = Function.abs(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("abs"))));
+                        break;
+                    case ("acos"):
+                        returnExpression = Function.acos(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("acos"))));
+                        break;
+                    case ("asin"):
+                        returnExpression = Function.asin(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("asin"))));
+                        break;
+                    case ("atan"):
+                        returnExpression = Function.atan(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("atan"))));
+                        break;
+                    case ("atan2"):
+                        returnExpression = Function.atan2(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("atan2"))),inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("y"))));
+                        break;
+                    case ("avg"):
+                        returnExpression = Function.avg(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("avg"))));
+                        break;
+                    case ("ceil"):
+                        returnExpression = Function.ceil(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("ceil"))));
+                        break;
+                    case ("contains"):
+                        returnExpression = Function.contains(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("contains"))),inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("y"))));
+                        break;
+                    case ("cos"):
+                        returnExpression = Function.cos(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("cos"))));
+                        break;
+                    case ("count"):
                         returnExpression = Function.count(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("count"))));
                         break;
-                    case ("lower"):
-                        returnExpression= Function.lower(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("lower"))));
+                    case ("degrees"):
+                        returnExpression = Function.degrees(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("degrees"))));
+                        break;
+                    case ("e"):
+                        returnExpression = Function.e();
+                        break;
+                    case ("exp"):
+                        returnExpression = Function.exp(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("exp"))));
+                        break;
+                    case ("floor"):
+                        returnExpression = Function.floor(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("floor"))));
                         break;
                     case ("length"):
-                        returnExpression= Function.length(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("length"))));
+                        returnExpression = Function.length(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("length"))));
                         break;
-                    case ("arrayLength"):
-                        returnExpression= ArrayFunction.length(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("arrayLength"))));
+                    case ("ln"):
+                        returnExpression = Function.ln(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("ln"))));
                         break;
+                    case ("log"):
+                        returnExpression = Function.log(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("log"))));
+                        break;
+                    case ("lower"):
+                        returnExpression = Function.lower(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("lower"))));
+                        break;
+                    case ("ltrim"):
+                        returnExpression = Function.ltrim(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("ltrim"))));
+                        break;
+                    case ("max"):
+                        returnExpression = Function.max(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("max"))));
+                        break;
+                    case ("min"):
+                        returnExpression = Function.min(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("min"))));
+                        break;
+                    case ("pi"):
+                        returnExpression = Function.pi();
+                        break;
+                    case ("power"):
+                        returnExpression = Function.power(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("power"))),inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("exponent"))));
+                        break;
+                    case ("radians"):
+                        returnExpression = Function.radians(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("radians"))));
+                        break;
+                    case ("round"):
+                        if (currentExpression.containsKey("digits")) {
+                            returnExpression = Function.round(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("round"))), inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("digits"))));
+                        } else {
+                            returnExpression = Function.round(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("round"))));
+                        }
+                        break;
+                    case ("rtrim"):
+                        returnExpression = Function.rtrim(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("rtrim"))));
+                        break;
+                    case ("sign"):
+                        returnExpression = Function.sign(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("sign"))));
+                        break;
+                    case ("sin"):
+                        returnExpression = Function.sin(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("sin"))));
+                        break;
+                    case ("sqrt"):
+                        returnExpression = Function.sqrt(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("sqrt"))));
+                        break;
+                    case ("sum"):
+                        returnExpression = Function.sum(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("sum"))));
+                        break;
+                    case ("tan"):
+                        returnExpression = Function.tan(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("tan"))));
+                        break;
+                    case ("trim"):
+                        returnExpression = Function.trim(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("trim"))));
+                        break;
+                    case ("trunc"):
+                        if (currentExpression.containsKey("digits")) {
+                            returnExpression = Function.trunc(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("trunc"))),inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("digits"))));
+                        } else {
+                            returnExpression = Function.trunc(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("trunc"))));
+                        }
+                        break;
+                    case ("upper"):
+                        returnExpression = Function.upper(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("upper"))));
+                        break;
+                    case ("fullTextMatch"):
+                        List<String> values = getStringList(currentExpression.get("fullTextMatch"));
+                        returnExpression = FullTextExpression.index(values.get(0)).match(values.get(1));
+                        break;
+
                 }
             } else {
                 switch (currentExpression.keySet().iterator().next()) {
                     case ("from"):
                         if (returnExpression instanceof PropertyExpression) {
-                            returnExpression = ((PropertyExpression) returnExpression).from((String) currentExpression.get("from"));
+                            Object from = currentExpression.get("from");
+                            if (from instanceof String) {
+                                returnExpression = ((PropertyExpression) returnExpression).from((String) from);
+                            }
                         } else if (returnExpression instanceof MetaExpression) {
-                            returnExpression = ((MetaExpression) returnExpression).from((String) currentExpression.get("from"));
+                            Object from = currentExpression.get("from");
+                            if (from instanceof String) {
+                                returnExpression = ((MetaExpression) returnExpression).from((String) from);
+                            }
                         }
                         break;
                     case ("add"):
@@ -410,13 +577,20 @@ class QueryJson {
                     case ("subtract"):
                         returnExpression = returnExpression.subtract(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("subtract"))));
                         break;
+                    case ("between"):
+                        returnExpression = returnExpression.between(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("between"))),inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(currentExpression.get("and"))));
+                        break;
                     case ("in"):
-                        List inParams = QueryMap.getListOfMapFromGenericList(currentExpression.get("in"));
-                        Expression[] inExpressions = new Expression[inParams.size()];
-                        for (int k = 0; k < inParams.size(); k++) {
-                            inExpressions[k] = inflateExpressionFromArray(Collections.singletonList((Map<String, Object>) inParams.get(k)));
+                        List<Expression> inExpressions = new ArrayList<>();
+                        Object objectList = currentExpression.get("in");
+                        if (objectList instanceof List<?>) {
+                            List<?> genericList = (List<?>) objectList;
+                            for (Object listObject : genericList) {
+                                inExpressions.add(inflateExpressionFromArray(QueryMap.getListOfMapFromGenericList(listObject)));
+                            }
                         }
-                        returnExpression = returnExpression.in(inExpressions);
+
+                        returnExpression = returnExpression.in(inExpressions.toArray(new Expression[]{}));
                         break;
                     case ("arrayInAny"):
                     case ("satisfies"):
@@ -425,13 +599,23 @@ class QueryJson {
                         returnExpression = ArrayExpression.any((VariableExpression) returnExpression)
                                 .in(inflateExpressionFromArray(arrayInAnyList))
                                 .satisfies(inflateExpressionFromArray(satisfiesList));
-
                         break;
-
                 }
             }
         }
         return returnExpression;
+    }
+
+    private static List<String> getStringList(Object valueList) {
+        List<String> result = new ArrayList<>();
+        if (valueList instanceof List<?>) {
+            for (Object value : (List<?>)valueList) {
+                if (value instanceof String) {
+                    result.add((String)value);
+                }
+            }
+        }
+        return result;
     }
 }
 
@@ -459,7 +643,7 @@ class QueryMap {
             this.queryMap = getMapFromGenericMap(unwrappedJson);
         }
         if (queryMap.containsKey("selectDistinct")) {
-            this.selectDistinct = (Boolean) queryMap.get("selectDistinct");
+            this.selectDistinct = (boolean) queryMap.get("selectDistinct");
         }
         if (queryMap.containsKey("selectResult")) {
             this.hasSelectResult = true;
@@ -532,6 +716,7 @@ class QueryMap {
     private List<Map<String, Object>> getList(String key) {
         List<?> tempList = (List<?>) queryMap.get(key);
         List<Map<String, Object>> resultList = new ArrayList<>();
+        assert tempList != null;
         for (Object listObject : tempList) {
             if (listObject instanceof Map<?, ?>) {
                 resultList.add(getMapFromGenericMap(listObject));

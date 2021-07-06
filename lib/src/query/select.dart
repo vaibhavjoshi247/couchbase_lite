@@ -1,13 +1,13 @@
 part of couchbase_lite;
 
 class Select extends Query {
-  From from(String databaseName, {String as}) {
-    var resultQuery = new From();
-    resultQuery._options = this.options;
+  From from(String databaseName, {String? as}) {
+    var resultQuery = From();
+    resultQuery._options = options;
     if (as != null) {
-      resultQuery._options["from"] = {"database": databaseName, "as": as};
+      resultQuery._options['from'] = {'database': databaseName, 'as': as};
     } else {
-      resultQuery._options["from"] = {"database": databaseName};
+      resultQuery._options['from'] = {'database': databaseName};
     }
     return resultQuery;
   }

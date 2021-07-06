@@ -8,12 +8,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/main.dart';
+// ignore: avoid_relative_lib_imports
+import '../lib/beer_sample_app.dart';
 
 void main() {
   testWidgets('Verify Platform version', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    MyApp app = MyApp();
+    BeerSampleApp app = BeerSampleApp(AppMode.production);
     await tester.pumpWidget(app);
 
     // Verify that platform version is retrieved.

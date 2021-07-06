@@ -2,21 +2,18 @@ part of couchbase_lite;
 
 /// Couchbase Lite document. The Document is immutable.
 class Document {
-  Document([Map<dynamic, dynamic> data, String id]) {
-    if (data != null) {
-      _data = _stringMapFromDynamic(data);
-    } else {
-      _data = Map<String, dynamic>();
-    }
-
-    _id = id;
+  Document._init(
+      [Map<dynamic, dynamic>? data, this._id, this._dbname, this._sequence]) {
+    _data = _stringMapFromDynamic(data ?? {});
   }
 
-  Map<dynamic, dynamic> _data;
-  String _id;
+  late Map<dynamic, dynamic> _data;
+  String? _dbname;
+  String? _id;
+  int? _sequence;
 
-  /// The document's ID.
-  String get id => _id;
+  String? get id => _id;
+  int? get sequence => _sequence;
 
   Map<String, dynamic> _stringMapFromDynamic(Map<dynamic, dynamic> _map) {
     return Map.castFrom<dynamic, dynamic, String, dynamic>(_map);
@@ -29,11 +26,7 @@ class Document {
   /// - Parameter key: The key.
   /// - Returns: True of the property exists, otherwise false.
   bool contains(String key) {
-    if (_data != null && _data.isNotEmpty && _data.containsKey(key)) {
-      return true;
-    } else {
-      return false;
-    }
+    return _data.containsKey(key);
   }
 
   /// The number of properties in the document.
@@ -46,15 +39,7 @@ class Document {
   ///
   /// - Parameter key: The key.
   /// - Returns: The Bool value.
-  bool getBoolean(String key) {
-    Object _result = getValue(key);
-
-    if (_result is num) {
-      return _result != 0;
-    }
-
-    return _result is bool ? _result : false;
-  }
+  bool? getBoolean(String key) => this[key].getBoolean();
 
   /// Gets a property's value as a double value.
   /// Integers will be converted to double. The value `true` is returned as 1.0, `false` as 0.0.
@@ -62,16 +47,7 @@ class Document {
   ///
   /// - Parameter key: The key.
   /// - Returns: The Double value.
-  double getDouble(String key) {
-    Object _result = getValue(key);
-    if (_result is double) {
-      return _result;
-    } else if (_result is int) {
-      return _result.toDouble();
-    } else {
-      return 0.0;
-    }
-  }
+  double? getDouble(String key) => this[key].getDouble();
 
   /// Gets a property's value as an int value.
   /// Floating point values will be rounded. The value `true` is returned as 1, `false` as 0.
@@ -79,24 +55,21 @@ class Document {
   ///
   /// - Parameter key: The key.
   /// - Returns: The Int value.
-  int getInt(String key) {
-    Object _result = getValue(key);
-    if (_result is double) {
-      return _result.toInt();
-    } else if (_result is int) {
-      return _result;
-    } else {
-      return 0;
-    }
-  }
+  int? getInt(String key) => this[key].getInt();
+
+  ///  Get a property’s value as a Blob object without the data.
+  ///  Returns nil if the property doesn’t exist, or its value is not a blob.
+  ///  The blob content will not be stored in the blob, it will be fetched when accessed
+  ///  and the content will return null when there is a discrepancy in the digest,
+  ///  this can happen if the file updated since the last time the document was fetched.
+  ///
+  /// - Parameter key: The key.
+  /// - Returns: The Blob object or null.
+  Blob? getBlob(String key) => this[key].getBlob();
 
   /// An array containing all keys, or an empty array if the document has no properties.
   List<String> getKeys() {
-    if (_data != null) {
-      return _data.keys.toList();
-    } else {
-      return List<String>();
-    }
+    return _data.keys.toList() as List<String>;
   }
 
   ///  Gets a property's value as a string.
@@ -104,10 +77,17 @@ class Document {
   ///
   /// - Parameter key: The key.
   /// - Returns: The String object or null.
-  String getString(String key) {
+  String? getString(String key) => this[key].getString();
+
+  ///  Gets a property's value as a date.
+  ///  Returns null if the property doesn't exist, or its value is not a date.
+  ///
+  /// - Parameter key: The key.
+  /// - Returns: The DateTime object in UTC or null.
+  /*DateTime _getDate(String key, DateTime value) {
     Object _result = getValue(key);
-    return _result is String ? _result : null;
-  }
+    return _result is String ? DateTime.parse(_result).toUtc() : null;
+  }*/
 
   /// Gets a property's value. The value types are Blob, ArrayObject,
   /// DictionaryObject, Number, or String based on the underlying data type; or null
@@ -115,34 +95,22 @@ class Document {
   ///
   /// - Parameter key: The key.
   /// - Returns: The value or null.
-  Object getValue(String key) {
-    if (contains(key)) {
-      return _data[key] as Object;
-    } else {
-      return null;
-    }
-  }
+  Object? getValue(String key) => this[key].getValue();
 
   /// Get a property's value as a List Object, which is a mapping object of an array value.
   /// Returns null if the property doesn't exists, or its value is not an array.
   ///
   /// - Parameter key: The key.
   /// - Returns: The List Object object or null.
-  List<T> getList<T>(String key) {
-    var _result = getValue(key);
-    if (_result is List) {
-      return List.from(List.castFrom<dynamic, T>(_result));
-    }
-
-    return null;
-  }
+  List<T>? getList<T>(String key) => this[key].getList();
 
   /// Get a property's value as a List Object, which is a mapping object of an array value.
   /// Returns null if the property doesn't exists, or its value is not an array.
   ///
   /// - Parameter key: The key.
   /// - Returns: The List Object object or null.
-  List<T> getArray<T>(String key) => getList(key);
+  @Deprecated('Use `getList`.')
+  List<T>? getArray<T>(String key) => getList(key);
 
   /// Get a property's value as a Map Object, which is a mapping object of
   /// a dictionary value.
@@ -150,14 +118,7 @@ class Document {
   ///
   /// - Parameter key: The key.
   /// - Returns: The Map Object object or nil.
-  Map<K, V> getMap<K, V>(String key) {
-    var _result = getValue(key);
-    if (_result is Map) {
-      return Map.from(Map.castFrom<dynamic, dynamic, K, V>(_result));
-    }
-
-    return null;
-  }
+  Map<K, V>? getMap<K, V>(String key) => this[key].getMap();
 
   /// Gets content of the current object as a Dictionary.
   ///
@@ -170,6 +131,9 @@ class Document {
   ///
   /// - Returns: The MutableDocument object.
   MutableDocument toMutable() {
-    return MutableDocument(_data, id);
+    return MutableDocument._init(_data, id, _dbname, sequence);
   }
+
+  /// Subscript access to a Fragment object by key.
+  Fragment operator [](String key) => Fragment._init(_data[key]);
 }

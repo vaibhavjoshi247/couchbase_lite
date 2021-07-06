@@ -10,6 +10,8 @@ void main() {
   const MethodChannel jsonChannel = MethodChannel(
       'com.saltechsystems.couchbase_lite/json', JSONMethodCodec());
 
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUp(() {
     databaseChannel.setMockMethodCallHandler((MethodCall methodCall) async {
       Map<dynamic, dynamic> arguments = methodCall.arguments;
@@ -35,15 +37,25 @@ void main() {
           break;
         case ("saveDocument"):
           if (arguments.containsKey("map")) {
-            return 'documentid';
+            return {
+              "id": "documentid",
+              "sequence": 1,
+              "success": true,
+              "doc": arguments["map"]
+            };
           } else {
             return PlatformException(
                 code: "errArgs", message: "invalid arguments", details: null);
           }
           break;
         case ("saveDocumentWithId"):
-          if (arguments.containsKey("id") && arguments.containsKey("map")) {
-            return arguments["id"];
+          if (arguments.containsKey("map") && arguments.containsKey("id")) {
+            return {
+              "id": arguments["id"],
+              "sequence": 1,
+              "success": true,
+              "doc": arguments["map"]
+            };
           } else {
             return PlatformException(
                 code: "errArgs", message: "invalid arguments", details: null);
@@ -65,7 +77,7 @@ void main() {
           break;
         case ("deleteDocumentWithId"):
           if (arguments.containsKey("id")) {
-            return null;
+            return true;
           } else {
             return PlatformException(
                 code: "errArgs",
@@ -75,6 +87,40 @@ void main() {
           break;
         case ("getDocumentCount"):
           return 1;
+        case ("compactDatabaseWithName"):
+          return null;
+        case ("getIndexes"):
+          return [];
+        case ("createIndex"):
+          if (arguments.containsKey("index") &&
+              arguments.containsKey("withName")) {
+            return true;
+          } else {
+            return PlatformException(
+                code: "errArgs",
+                message: "Query Error: Invalid Arguments",
+                details: arguments.toString());
+          }
+          break;
+        case ("deleteIndex"):
+          if (arguments.containsKey("forName")) {
+            return true;
+          } else {
+            return PlatformException(
+                code: "errArgs",
+                message: "Query Error: Invalid Arguments",
+                details: arguments.toString());
+          }
+          break;
+        case ("addDocumentChangeListener"):
+          return null;
+          break;
+        case ("addChangeListener"):
+          return null;
+          break;
+        case ("removeChangeListener"):
+          return null;
+          break;
         default:
           return UnimplementedError();
       }
@@ -119,6 +165,9 @@ void main() {
         case "removeQuery":
           return true;
           break;
+        case "explainQuery":
+          return "query explained! Should not contain SCAN TABLE";
+          break;
         case "storeReplicator":
           return null;
           break;
@@ -131,6 +180,7 @@ void main() {
 
   tearDown(() {
     databaseChannel.setMethodCallHandler(null);
+    replicatorChannel.setMethodCallHandler(null);
     jsonChannel.setMockMethodCallHandler(null);
   });
 
@@ -139,16 +189,54 @@ void main() {
     await database.close();
     await database.deleteDocument("docid");
     expect(await database.count, 1);
-    expect(await database.saveDocument(Document({})), "documentid");
-    expect(await database.saveDocument(Document({}, "docid")), "docid");
-    expect(await database.saveDocumentWithId("docid", Document({})), "docid");
-    MutableDocument doc = MutableDocument({});
-    await database.save(doc);
+    expect(await database.saveDocument(MutableDocument()), true);
+    expect(await database.saveDocument(MutableDocument(id: "docid")), true);
+    MutableDocument doc = MutableDocument();
+    await database.saveDocument(doc);
     expect(doc.id, "documentid");
-    doc.id = "test";
-    await database.save(doc);
-    expect(doc.id, "test");
+    await database.saveDocument(doc);
+    expect(doc.id, "documentid");
+    var testDoc = await database.document("myid");
+    expect(testDoc, isNotNull);
+    expect(testDoc!.id, "myid");
+    expect(await database.deleteDocument("myid"), true);
+    // Code Coverage for deprecate functions
+    // ignore: deprecated_member_use_from_same_package
     await database.documentWithId("myid");
+    // ignore: deprecated_member_use_from_same_package
+    await database.save(MutableDocument());
+
+    var token = database.addChangeListener((dbChnage) => {});
+    token = await database.removeChangeListener(token);
+    expect(token, isNotNull);
+
+    token = database.addDocumentChangeListener("myid", (change) => {});
+    await database.removeChangeListener(token);
+
+    var index = IndexBuilder.valueIndex(items: [
+      ValueIndexItem.property("type"),
+      ValueIndexItem.property("name"),
+      ValueIndexItem.expression(Expression.property('owner'))
+    ]);
+
+    List<Map<String, dynamic>> expected = [
+      {"property": "type"},
+      {"property": "name"},
+      {
+        "expression": [
+          {"property": "owner"}
+        ]
+      },
+    ];
+
+    expect(index.toJson(), expected);
+    await database.createIndex(index, withName: "MyIndex");
+    await database.deleteIndex(forName: "MyIndex");
+
+    await database.indexes;
+    await database.compact();
+    await database.delete();
+    await Database.deleteWithName("testdb");
   });
 
   test('testQuery', () async {
@@ -156,6 +244,7 @@ void main() {
         QueryBuilder.select([SelectResult.all()]).from("test", as: "sheets");
     await query.execute();
     //expect(await query.parameters, throwsUnimplementedError);
+    expect(await query.explain(), isNotNull);
   });
 
   test('testQueryChangeListener', () async {
@@ -196,6 +285,7 @@ void main() {
     Replicator replicator = Replicator(config);
 
     await replicator.addChangeListener((change) {});
+    await replicator.addDocumentReplicationListener((replication) {});
     await replicator.start();
     await replicator.stop();
     await replicator.resetCheckpoint();

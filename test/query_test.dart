@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:couchbase_lite/couchbase_lite.dart';
@@ -447,20 +448,32 @@ void main() {
   group("Results", () {
     var map = {
       "int": 1,
-      "bool": true,
+      "true": true,
+      "false": false,
+      "1": 1,
+      "0": 0,
       "list": [],
       "double": 1.2,
       "string": "test",
-      "object": {}
+      "object": {},
+      "blob": {
+        "@type": "blob",
+        "content_type": "application/octet-stream",
+        "digest": "",
+        "lenth": 0,
+        "data": Uint8List(0)
+      },
     };
-    Map<dynamic, dynamic> result = {
+    var result = <dynamic, dynamic>{
       "map": map,
-      "list": [1]
+      "list": List.from(map.values),
+      "keys": List<String>.from(map.keys)
     };
 
     var newResult = Result();
     newResult.setMap(result["map"]);
     newResult.setList(result["list"]);
+    newResult.setKeys(result["keys"]);
 
     test("contains()", () {
       expect(newResult.contains("int"), true);
@@ -474,8 +487,20 @@ void main() {
       expect(newResult.getList(key: "list"), []);
     });
 
-    test("getBoolean()", () {
-      expect(newResult.getBoolean(key: "bool"), true);
+    test("getBoolean(true)", () {
+      expect(newResult.getBoolean(key: "true"), true);
+    });
+
+    test("getBoolean(false)", () {
+      expect(newResult.getBoolean(key: "false"), false);
+    });
+
+    test("getBoolean(1)", () {
+      expect(newResult.getBoolean(key: "1"), true);
+    });
+
+    test("getBoolean(0)", () {
+      expect(newResult.getBoolean(key: "0"), false);
     });
 
     test("getDouble()", () {
@@ -498,12 +523,16 @@ void main() {
       expect(newResult.getValue(key: "int"), 1);
     });
 
+    test("getBlob()", () {
+      expect(newResult.getBlob(key: "blob").runtimeType, Blob);
+    });
+
     test("getValueIndex()", () {
       expect(newResult.getValue(index: 0), 1);
     });
 
     test("toList()", () {
-      expect(newResult.toList(), [1]);
+      expect(newResult.toList(), List.from(map.values));
     });
 
     test("toMap()", () {

@@ -1,11 +1,14 @@
 package com.saltechsystems.couchbase_lite;
 
-import android.content.res.AssetManager;
+
+import androidx.annotation.NonNull;
 
 import com.couchbase.lite.BasicAuthenticator;
 import com.couchbase.lite.Database;
+import com.couchbase.lite.Document;
+import com.couchbase.lite.DocumentFlag;
 import com.couchbase.lite.Endpoint;
-import com.couchbase.lite.Query;
+import com.couchbase.lite.ReplicationFilter;
 import com.couchbase.lite.Replicator;
 import com.couchbase.lite.ReplicatorConfiguration;
 import com.couchbase.lite.SessionAuthenticator;
@@ -14,14 +17,17 @@ import com.couchbase.lite.URLEndpoint;
 import org.json.JSONObject;
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
+import java.util.Objects;
 
 import io.flutter.plugin.common.JSONUtil;
 
 class ReplicatorJson {
     private ReplicatorMap replicatorMap;
-    private Query query = null;
     private CBManager mCBManager;
     private ReplicatorConfiguration mReplicatorConfig;
 
@@ -32,11 +38,6 @@ class ReplicatorJson {
 
     Replicator toCouchbaseReplicator() {
         if (replicatorMap.hasConfig) {
-//            try {
-//
-//            } catch (Exception e) {
-//
-//            }
             inflateConfig();
         }
 
@@ -88,6 +89,22 @@ class ReplicatorJson {
             }
         }
 
+        if (replicatorMap.channels != null) {
+            mReplicatorConfig.setChannels(replicatorMap.channels);
+        }
+
+        if (replicatorMap.pushAttributeFilters != null) {
+            mReplicatorConfig.setPushFilter(inflateReplicationFilter(replicatorMap.pushAttributeFilters));
+        }
+
+        if (replicatorMap.pullAttributeFilters != null) {
+            mReplicatorConfig.setPullFilter(inflateReplicationFilter(replicatorMap.pullAttributeFilters));
+        }
+
+        if (replicatorMap.headers != null) {
+            mReplicatorConfig.setHeaders(replicatorMap.headers);
+        }
+
         if (replicatorMap.hasAuthenticator) {
             inflateAuthenticator();
         }
@@ -98,22 +115,46 @@ class ReplicatorJson {
 
         String method = (String) replicatorMap.authenticator.get("method");
 
+        assert method != null;
         switch (method) {
             case "basic":
                 if (!replicatorMap.authenticator.containsKey("username") || !replicatorMap.authenticator.containsKey("password")) throw new IllegalArgumentException("Missing username or password");
                 String username = (String) replicatorMap.authenticator.get("username");
                 String password = (String) replicatorMap.authenticator.get("password");
+                assert username != null;
+                assert password != null;
                 mReplicatorConfig.setAuthenticator(new BasicAuthenticator(username,password));
                 break;
             case "session":
                 if (!replicatorMap.authenticator.containsKey("sessionId")) throw new IllegalArgumentException("Missing sessionId");
                 String sessionId = (String) replicatorMap.authenticator.get("sessionId");
                 String cookieName = (String) replicatorMap.authenticator.get("cookieName");
+                assert sessionId != null;
                 mReplicatorConfig.setAuthenticator(new SessionAuthenticator(sessionId,cookieName));
                 break;
             default:
                 throw new IllegalArgumentException("Invalid authentication method: " + method);
         }
+    }
+
+    private static ReplicationFilter inflateReplicationFilter(final Map<String, List<Object>> filterMap) {
+        return new ReplicationFilter() {
+            @Override
+            public boolean filtered(@NonNull Document document,
+                                    @NonNull EnumSet<DocumentFlag> flags) {
+                for (Map.Entry<String, List<Object>> entry : filterMap.entrySet()) {
+                    if (!document.contains(entry.getKey())) {
+                        return false;
+                    }
+
+                    Object value = document.getValue(entry.getKey());
+                    if (!entry.getValue().contains(value)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        };
     }
 }
 
@@ -133,6 +174,11 @@ class ReplicatorMap {
     String pinnedServerCertificate;
     boolean hasAuthenticator = false;
     Map<String, Object> authenticator;
+    List<String> channels;
+    Map<String, List<Object>> pushAttributeFilters;
+    Map<String, List<Object>> pullAttributeFilters;
+    Map<String, String> headers;
+
 
     ReplicatorMap(JSONObject jsonObject) {
         Object unwrappedJson = JSONUtil.unwrap(jsonObject);
@@ -156,7 +202,10 @@ class ReplicatorMap {
             }
             if (config.containsKey("continuous")) {
                 hasContinuous = true;
-                continuous = (Boolean) config.get("continuous");
+                Object continuousObject = config.get("continuous");
+                if (continuousObject instanceof Boolean) {
+                    continuous = (Boolean) continuousObject;
+                }
             }
             if (config.containsKey("pinnedServerCertificate")) {
                 hasPinnedServerCertificate = true;
@@ -167,6 +216,34 @@ class ReplicatorMap {
                 if (mapObject instanceof Map<?, ?>) {
                     hasAuthenticator = true;
                     authenticator = getMapFromGenericMap(mapObject);
+                }
+            }
+
+            if (config.containsKey("channels")) {
+                Object listObject = config.get("channels");
+                if (listObject instanceof List<?>) {
+                    channels = getListFromGenericList(listObject);
+                }
+            }
+
+            if (config.containsKey("pushAttributeFilters")) {
+                Object filterObject = config.get("pushAttributeFilters");
+                if (filterObject instanceof Map<?, ?>) {
+                    pushAttributeFilters = getFilterMapFromGenericMap(filterObject);
+                }
+            }
+
+            if (config.containsKey("pullAttributeFilters")) {
+                Object filterObject = config.get("pullAttributeFilters");
+                if (filterObject instanceof Map<?, ?>) {
+                    pullAttributeFilters = getFilterMapFromGenericMap(filterObject);
+                }
+            }
+
+            if (config.containsKey("headers")) {
+                Object mapObject = config.get("headers");
+                if (mapObject instanceof Map<?, ?>) {
+                    headers = getMapOfStringsFromGenericMap(mapObject);
                 }
             }
         }
@@ -181,6 +258,45 @@ class ReplicatorMap {
             }
         }
         return resultMap;
+    }
+
+    private Map<String, List<Object>> getFilterMapFromGenericMap(Object objectMap) {
+        Map<String, List<Object>> resultMap = new HashMap<>();
+        if (objectMap instanceof Map<?, ?>) {
+            Map<?,?> genericMap = (Map<?,?>) objectMap;
+            for (Map.Entry<?, ?> entry : genericMap.entrySet()) {
+                Object objectList = entry.getValue();
+                List<Object> resultList = new ArrayList<>();
+                if (objectList instanceof List<?>) {
+                    resultList.addAll((List<?>) objectList);
+                }
+
+                resultMap.put((String) entry.getKey(), CBManager.convertSETArray(resultList));
+            }
+        }
+        return resultMap;
+    }
+
+    private Map<String, String> getMapOfStringsFromGenericMap(Object objectMap) {
+        Map<String, String> resultMap = new HashMap<>();
+        if (objectMap instanceof Map<?, ?>) {
+            Map<?,?> genericMap = (Map<?,?>) objectMap;
+            for (Map.Entry<?, ?> entry : genericMap.entrySet()) {
+                resultMap.put((String) entry.getKey(), Objects.toString(entry.getValue(), ""));
+            }
+        }
+        return resultMap;
+    }
+
+    private List<String> getListFromGenericList(Object objectList) {
+        List<String> resultList = new ArrayList<>();
+        if (objectList instanceof List<?>) {
+            List<?> genericList = (List<?>) objectList;
+            for (Object object : genericList) {
+                resultList.add(Objects.toString(object, null));
+            }
+        }
+        return resultList;
     }
 
     private Map<String, Object> getMap(String key) {

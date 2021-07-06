@@ -27,20 +27,15 @@ class CBManager {
     private var mQueries : Dictionary<String,Query> = Dictionary();
     private var mQueryListenerTokens : Dictionary<String,ListenerToken> = Dictionary();
     private var mReplicators : Dictionary<String,Replicator> = Dictionary();
-    private var mReplicatorListenerTokens : Dictionary<String,ListenerToken> = Dictionary();
+    private var mReplicatorListenerTokens : Dictionary<String,[ListenerToken]> = Dictionary();
+    private var mDatabaseListenerTokens : Dictionary<String, ListenerToken> = Dictionary();
     private var mDBConfig = DatabaseConfiguration();
     private weak var mDelegate: CBManagerDelegate?
+    private static var mBlobs : Dictionary<String,Blob> = Dictionary()
     
-    init(delegate: CBManagerDelegate, enableLogging: Bool) {
+    init(delegate: CBManagerDelegate, logLevel: LogLevel) {
         mDelegate = delegate
-        
-        guard enableLogging else {
-            return
-        }
-        
-        let tempFolder = NSTemporaryDirectory().appending("cbllog")
-        Database.log.file.config = LogFileConfiguration(directory: tempFolder)
-        Database.log.file.level = .info
+        Database.log.console.level = logLevel
     }
     
     func getDatabase(name : String) -> Database? {
@@ -51,16 +46,52 @@ class CBManager {
         }
     }
     
-    func saveDocument(database: Database, map: Dictionary<String, Any>) throws -> String? {
-        let mutableDocument: MutableDocument = MutableDocument(data: map);
-        try database.saveDocument(mutableDocument)
-        return mutableDocument.id;
+    func saveDocument(database: Database, map: Dictionary<String, Any>, concurrencyControl: ConcurrencyControl) throws -> NSMutableDictionary {
+        let resultMap: NSMutableDictionary = NSMutableDictionary.init()
+        let mutableDocument: MutableDocument = MutableDocument(data: CBManager.convertSETDictionary(map));
+        let success = try database.saveDocument(mutableDocument, concurrencyControl: concurrencyControl)
+        resultMap["success"] = success
+        if (success) {
+            resultMap["id"] = mutableDocument.id
+            resultMap["sequence"] = mutableDocument.sequence
+            resultMap["doc"] = _documentToMap(mutableDocument)
+        }
+        return resultMap
     }
     
-    func saveDocumentWithId(database: Database, id: String, map: Dictionary<String, Any>) throws -> String? {
-        let mutableDocument: MutableDocument = MutableDocument(id: id, data: map)
-        try database.saveDocument(mutableDocument)
-        return mutableDocument.id
+    func saveDocumentWithId(database: Database, id: String, map: Dictionary<String, Any>, concurrencyControl: ConcurrencyControl) throws -> NSMutableDictionary {
+        let resultMap: NSMutableDictionary = NSMutableDictionary.init()
+        let mutableDocument: MutableDocument = MutableDocument(id: id, data: CBManager.convertSETDictionary(map))
+        let success = try database.saveDocument(mutableDocument, concurrencyControl: concurrencyControl)
+        resultMap["success"] = success
+        if (success) {
+            resultMap["id"] = mutableDocument.id
+            resultMap["sequence"] = mutableDocument.sequence
+            resultMap["doc"] = _documentToMap(mutableDocument)
+        }
+        return resultMap
+    }
+    
+    func saveDocumentWithId(database: Database, id: String, sequence: UInt64, map: Dictionary<String, Any>, concurrencyControl: ConcurrencyControl) throws -> NSMutableDictionary {
+        let resultMap: NSMutableDictionary = NSMutableDictionary.init()
+        let document = database.document(withID: id)
+        
+        if let currentSequence = document?.sequence, sequence != currentSequence {
+            resultMap["success"] = false
+            return resultMap
+        }
+        
+        let mutableDocument: MutableDocument = document?.toMutable() ?? MutableDocument(id: id)
+        mutableDocument.setData(CBManager.convertSETDictionary(map))
+        
+        let success = try database.saveDocument(mutableDocument, concurrencyControl: concurrencyControl)
+        resultMap["success"] = success
+        if (success) {
+            resultMap["id"] = mutableDocument.id
+            resultMap["sequence"] = mutableDocument.sequence
+            resultMap["doc"] = _documentToMap(mutableDocument)
+        }
+        return resultMap
     }
     
     func deleteDocumentWithId(database: Database, id: String) throws {
@@ -72,15 +103,55 @@ class CBManager {
     func getDocumentWithId(database: Database, id: String) -> NSDictionary? {
         let resultMap: NSMutableDictionary = NSMutableDictionary.init()
         if let document: Document = database.document(withID: id) {
-            let retrievedDocument: NSDictionary = NSDictionary.init(dictionary: document.toDictionary())
             // It is a repetition due to implementation of Document Dart Class
-            resultMap["id"] = id
-            resultMap["doc"] = retrievedDocument
+            resultMap["id"] = document.id
+            resultMap["sequence"] = document.sequence
+            resultMap["doc"] = NSDictionary.init(dictionary:_documentToMap(document))
         } else {
             resultMap["id"] = id
-            resultMap["doc"] = NSDictionary.init()
+            resultMap["doc"] = nil
         }
+        
         return NSDictionary.init(dictionary: resultMap)
+    }
+    
+    static func getBlobWithDigest(_ digest: String) -> Blob? {
+        // mBlobs needs to be thread safe because of Queries
+        objc_sync_enter(mBlobs)
+        defer {
+            objc_sync_exit(mBlobs)
+        }
+        
+        return mBlobs[digest]
+    }
+    
+    static func setBlobWithDigest(_ digest: String, blob: Blob) {
+        // mBlobs needs to be thread safe because of Queries
+        objc_sync_enter(mBlobs)
+        defer {
+            objc_sync_exit(mBlobs)
+        }
+        
+        mBlobs[digest] = blob
+    }
+    
+    static func clearBlobCache() {
+        // mBlobs needs to be thread safe because of Queries
+        objc_sync_enter(mBlobs)
+        defer {
+            objc_sync_exit(mBlobs)
+        }
+        
+        mBlobs.removeAll()
+    }
+    
+    private func _documentToMap(_ doc: Document) -> [String: Any] {
+        var parsed: [String: Any] = [:]
+        for key in doc.keys {
+            parsed[key] = CBManager.convertGETValue(doc.value(forKey: key))
+        }
+        
+        return parsed
     }
     
     func initDatabaseWithName(name: String) throws -> Database {
@@ -94,14 +165,45 @@ class CBManager {
     }
     
     func deleteDatabaseWithName(name: String) throws {
-        try Database.delete(withName: name)
+        if let _db = mDatabase.removeValue(forKey: name) {
+            try _db.delete()
+        } else {
+            try Database.delete(withName: name)
+        }
     }
     
     func closeDatabaseWithName(name: String) throws {
         if let _db = mDatabase.removeValue(forKey: name) {
+        
+            if let token = mDatabaseListenerTokens[name] {
+                _db.removeChangeListener(withToken: token)
+                mDatabaseListenerTokens.removeValue(forKey: name)
+            }
+            
             try _db.close()
         }
     }
+    
+    func getDatabaseListenerToken(dbname: String) -> ListenerToken? {
+        return mDatabaseListenerTokens[dbname]
+    }
+    
+    func addDatabaseListenerToken(dbname: String, token: ListenerToken) {
+        mDatabaseListenerTokens[dbname] = token
+    }
+    
+    func removeDatabaseListenerToken(dbname: String) throws {
+        
+        guard let database = getDatabase(name: dbname) else {
+            throw CBManagerError.DatabaseNotFound
+        }
+        
+        if let token = mDatabaseListenerTokens[dbname] {
+            database.removeChangeListener(withToken: token)
+            mDatabaseListenerTokens.removeValue(forKey: dbname)
+        }
+    }
+    
     
     func addQuery(queryId: String, query: Query, listenerToken: ListenerToken) {
         mQueries[queryId] = query;
@@ -124,9 +226,9 @@ class CBManager {
         return query
     }
     
-    func addReplicator(replicationId: String, replicator: Replicator, listenerToken: ListenerToken) {
+    func addReplicator(replicationId: String, replicator: Replicator, listenerTokens: [ListenerToken]) {
         mReplicators[replicationId] = replicator;
-        mReplicatorListenerTokens[replicationId] = listenerToken;
+        mReplicatorListenerTokens[replicationId] = listenerTokens;
     }
     
     func getReplicator(replicationId: String) -> Replicator? {
@@ -138,8 +240,10 @@ class CBManager {
             return nil
         }
         
-        if let token = mReplicatorListenerTokens.removeValue(forKey: replicationId) {
-            replicator.removeChangeListener(withToken: token)
+        if let tokens = mReplicatorListenerTokens.removeValue(forKey: replicationId) {
+            tokens.forEach {(token) in
+                replicator.removeChangeListener(withToken: token)
+            }
         }
         
         return replicator
@@ -190,31 +294,73 @@ class CBManager {
             }
         }
         
+        if let channels = map["channels"] as? [Any] {
+            config.channels = channels.compactMap { $0 as? String }
+        }
+
+        if let pushFilters = map["pushAttributeFilters"] as? [String:[Any?]] {
+            config.pushFilter = CBManager.inflateReplicationFilter(pushFilters)
+        }
+
+        if let pullFilters = map["pullAttributeFilters"] as? [String:[Any?]] {
+            config.pullFilter = CBManager.inflateReplicationFilter(pullFilters)
+        }
+
+        if let headers = map["headers"] as? Dictionary<String,Any> {
+            config.headers = headers.mapValues { $0 as? String ?? "" }
+        }
+
         config.authenticator = try inflateAuthenticator(json: map["authenticator"])
         
         return config
     }
     
+    static func docValueEquals(_ x : Any?, _ y : Any?) -> Bool {
+        guard x is AnyHashable else { return false }
+        guard y is AnyHashable else { return false }
+        return (x as! AnyHashable) == (y as! AnyHashable)
+    }
+
     func inflateAuthenticator(json: Any?) throws -> Authenticator? {
-        guard let map = json as? Dictionary<String,String> else {
+        guard let map = json as? Dictionary<String,Any> else {
             return nil
         }
         
-        switch map["method"] {
+        switch map["method"] as! String {
         case "basic":
-            guard let username = map["username"], let password = map["password"] else {
+            guard let username = map["username"] as? String, let password = map["password"] as? String else {
                 throw CBManagerError.MissingArgument
             }
             
             return BasicAuthenticator(username: username, password: password)
         case "session":
-            guard let sessionId = map["sessionId"] else {
+            guard let sessionId = map["sessionId"] as? String else {
                 throw CBManagerError.MissingArgument
             }
             
-            return SessionAuthenticator(sessionID: sessionId, cookieName: map["cookieName"])
+            return SessionAuthenticator(sessionID: sessionId, cookieName: map["cookieName"] as? String)
         default:
             throw CBManagerError.IllegalArgument
+        }
+    }
+
+    static func inflateReplicationFilter(_ filterConfig: [String:[Any?]]) -> CouchbaseLiteSwift.ReplicationFilter {
+        let filterValues: [String:[Any?]] = filterConfig.compactMapValues { $0.compactMap { CBManager.convertSETValue($0) } }
+        return { (document, flags) in
+            for (key, values) in filterValues {
+                guard document.contains(key: key) else {
+                    return false
+                }
+
+                let docValue = document.value(forKey: key);
+                let matches = values.contains { (value) -> Bool in
+                    return CBManager.docValueEquals(value,docValue)
+                }
+                if !matches {
+                    return false
+                }
+            }
+            return true
         }
     }
 }

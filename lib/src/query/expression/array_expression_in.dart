@@ -15,7 +15,7 @@ class ArrayExpressionIn extends Object with Expression {
   final VariableExpression variable;
 
   ArrayExpressionSatisfies inA(Expression inExpression) {
-    return ArrayExpressionSatisfies(type,variable,inExpression);
+    return ArrayExpressionSatisfies(type, variable, inExpression);
   }
 
   @override

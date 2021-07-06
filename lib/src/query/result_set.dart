@@ -2,10 +2,10 @@ part of couchbase_lite;
 
 class ResultSet extends Object with IterableMixin<Result> {
   ResultSet(List<Result> _list) {
-    this._internalState = _list;
+    _internalState = _list;
   }
 
-  List<Result> _internalState;
+  late List<Result> _internalState;
 
   List<Result> allResults() => List.of(_internalState);
 

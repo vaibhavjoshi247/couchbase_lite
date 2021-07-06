@@ -18,7 +18,7 @@ class ArrayExpressionSatisfies extends Object with Expression {
 
   Expression satisfies(Expression expression) {
     if (expression == null) {
-      throw Exception("expression cannot be null.");
+      throw Exception('expression cannot be null.');
     }
     return QuantifiedExpression(type, variable, inExpression, expression);
   }
@@ -31,16 +31,21 @@ class ArrayExpressionSatisfies extends Object with Expression {
 
 class QuantifiedExpression extends Object with Expression {
   QuantifiedExpression(
-      this.type, this.variable, this.inExpression, this.expression) {
+    this.type,
+    this.variable,
+    this.inExpression,
+    this.expression,
+  ) {
     _internalExpressionStack.addAll(variable.internalExpressionStack);
     _internalExpressionStack.add({
       type: inExpression.internalExpressionStack,
-      "satisfies": expression.internalExpressionStack
+      'satisfies': expression.internalExpressionStack,
     });
   }
 
   QuantifiedExpression._clone(QuantifiedExpression expression)
       : type = expression.type,
+        this.expression = expression,
         this.variable = expression.variable,
         this.inExpression = expression.inExpression {
     _internalExpressionStack..addAll(expression.internalExpressionStack);

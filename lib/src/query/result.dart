@@ -1,30 +1,19 @@
 part of couchbase_lite;
 
 class Result {
-  Map<String, dynamic> _internalMap = {};
-  List<dynamic> _internalList = [];
+  final Map<String, dynamic> _internalMap = {};
+  final List<dynamic> _internalList = [];
+  final List<String> _keys = [];
 
   bool contains(String key) {
-    if (_internalMap != null) {
-      return _internalMap.containsKey(key);
-    } else if (_internalList != null) {
-      return _internalList.contains(key);
-    } else {
-      return null;
-    }
+    return _internalMap.containsKey(key);
   }
 
   int count() {
-    var result;
-    if (null != _internalMap) {
-      result = _internalMap.length;
-    } else if (null != _internalList) {
-      result = _internalList.length;
-    }
-    return result;
+    return _internalList.length;
   }
 
-  List<dynamic> getList({int index, String key}) {
+  List<dynamic>? getList({int? index, String? key}) {
     var result = getValue(index: index, key: key);
     if (result is List<dynamic>) {
       return result;
@@ -33,12 +22,21 @@ class Result {
     }
   }
 
-  //TODO: implement getBlob()
+  Blob? getBlob({int? index, String? key}) {
+    var result = getValue(index: index, key: key);
+    if (result is Map && result['@type'] == 'blob') {
+      return Blob._fromMap(result);
+    } else {
+      return null;
+    }
+  }
 
-  bool getBoolean({int index, String key}) {
+  bool? getBoolean({int? index, String? key}) {
     var result = getValue(index: index, key: key);
     if (result is bool) {
       return result;
+    } else if (result is num) {
+      return result != 0;
     } else {
       return null;
     }
@@ -46,7 +44,7 @@ class Result {
 
   //TODO: implement Date object and getDate
 
-  double getDouble({int index, String key}) {
+  double? getDouble({int? index, String? key}) {
     var result = getValue(index: index, key: key);
     if (result is double) {
       return result;
@@ -55,7 +53,7 @@ class Result {
     }
   }
 
-  int getInt({int index, String key}) {
+  int? getInt({int? index, String? key}) {
     var result = getValue(index: index, key: key);
     if (result is int) {
       return result;
@@ -65,14 +63,10 @@ class Result {
   }
 
   List<String> getKeys() {
-    if (null != _internalMap && _internalMap.isNotEmpty) {
-      return List.unmodifiable(_internalMap.keys);
-    } else {
-      return null;
-    }
+    return _keys;
   }
 
-  String getString({int index, String key}) {
+  String? getString({int? index, String? key}) {
     var result = getValue(index: index, key: key);
     if (result is String) {
       return result;
@@ -81,19 +75,14 @@ class Result {
     }
   }
 
-  Object getValue({int index, String key}) {
-    var result;
-    if (null != index && null == key) {
-      if (_internalList.length > index) {
-        result = _internalList[index];
-      }
+  Object? getValue({int? index, String? key}) {
+    if (null != index && _internalList.length > index) {
+      return _internalList[index];
+    } else if (null != key && _internalMap.containsKey(key)) {
+      return _internalMap[key];
+    } else {
+      return null;
     }
-    if (null != key && null == index) {
-      if (_internalMap.containsKey(key)) {
-        result = _internalMap[key];
-      }
-    }
-    return result;
   }
 
   //TODO: implement iterator()
@@ -106,6 +95,18 @@ class Result {
     return _internalMap;
   }
 
+  Fragment operator [](dynamic key) {
+    if (key is int) {
+      if (key < _internalList.length) {
+        return Fragment._init(_internalList[key]);
+      }
+    } else if (key is String) {
+      return Fragment._init(_internalMap[key]);
+    }
+
+    return Fragment._init(null);
+  }
+
   void setMap(Map<String, dynamic> map) {
     _internalMap.clear();
     _internalMap.addAll(map);
@@ -114,5 +115,10 @@ class Result {
   void setList(List<dynamic> list) {
     _internalList.clear();
     _internalList.addAll(list);
+  }
+
+  void setKeys(List<String> keys) {
+    _keys.clear();
+    _keys.addAll(keys);
   }
 }

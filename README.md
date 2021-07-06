@@ -18,7 +18,7 @@ In your flutter project add the dependency:
 
 ```yaml
 dependencies:
-  couchbase_lite: ^2.5.1
+  couchbase_lite: ^2.7.1
   
   flutter:
       sdk: flutter
@@ -31,171 +31,145 @@ For help getting started with Flutter, view the
 
 ### iOS
 
-| Platform | Minimum OS version |
-| -------- | ------------------ |
-| iOS      | 9.0                |
+| Platform | Minimum OS version      |
+| -------- | ----------------------- |
+| iOS      | 10.0 (9.0 - DEPRECATED) |
 
 ### Android
 
-| Platform | Runtime architectures | Minimum API Level |
-| -------- | --------------------- | ----------------- |
-| Android  | armeabi-v7a           | 19                |
-| Android  | arm64-v8a             | 21                |
-| Android  | x86                   | 19                |
+| Platform | Runtime architectures | Minimum API Level   |
+| -------- | --------------------- | ------------------- |
+| Android  | armeabi-v7a           | 22 (19 - DEPRECATED)|
+| Android  | arm64-v8a             | 22 (21 - DEPRECATED)|
+| Android  | x86                   | 22 (19 - DEPRECATED)|
+| Android  | x86_64                | 22                  |
 
 ## API References
 
-[Swift SDK API References](https://docs.couchbase.com/mobile/2.5.0/couchbase-lite-swift/)
+[Swift SDK API References](https://docs.couchbase.com/mobile/2.7.0/couchbase-lite-swift/)
 
-[Java SDK API References](http://docs.couchbase.com/mobile/2.5.0/couchbase-lite-java)
+[Java SDK API References](https://docs.couchbase.com/mobile/2.7.0/couchbase-lite-java)
 
 *Note*: Syntax follows the Swift SDK but these are the SDKs used for the platform code.
+
+## Local Server Setup
+
+Download and setup Couchbase Server / Sync Gateway Community Editions on your local machine the following link
+- [Sync Gatway Getting Started](https://docs.couchbase.com/sync-gateway/current/getting-started.html)
+- [Couchbase Downloads](https://www.couchbase.com/downloads)
+
+Setup beer-sample database [Local Couchbase Server](http://127.0.0.1:8091/):
+
+- Add the beer-sample bucket: Settings > Sample Buckets
+- Create a sync_gateway user in the Couchbase Server under Security
+- Give sync_gateway access to the beer-sample
+
+Start Sync Gateway:
+
+~/Downloads/couchbase-sync-gateway/bin/sync_gateway ~/path/to/sync-gateway-config.json
+
+*Note*: Included in this example is sync-gateway-config.json (Login => u: foo, p: bar)
+
 
 ## Usage example
 
 Below is an example for the database using the BLoC pattern ( View <-> BLoC <-> Repository <-> Database )
 
-The files can also be found in the plugin example but are not used in the main.dart.  The example will be revised in the near future to use the BLoC pattern.
-
 ```dart
-class AppDatabase {
-  AppDatabase._internal();
+// Initialize the database
+try {
+  database = await Database.initWithName("gettingStarted");
+} on PlatformException {
+  return "Error initializing database";
+}
 
-  static final AppDatabase instance = AppDatabase._internal();
+// Create a new document (i.e. a record) in the database.
+var mutableDoc = MutableDocument()
+    .setDouble("version", 2.0)
+    .setString("type", "SDK");
 
-  String dbName = "myDatabase";
-  List<Future> pendingListeners = List();
-  ListenerToken _replicatorListenerToken;
-  Database database;
-  Replicator replicator;
+// Save it to the database.
+try{
+  await database.saveDocument(mutableDoc);
+} on PlatformException {
+  return "Error saving document";
+}
 
-  Future<bool> login(String username, String password) async {
-    try {
-      database = await Database.initWithName(dbName);
-      // Note wss://10.0.2.2:4984/my-database is for the android simulator on your local machine's couchbase database
-      ReplicatorConfiguration config =
-          ReplicatorConfiguration(database, "wss://10.0.2.2:4984/my-database");
-      config.replicatorType = ReplicatorType.pushAndPull;
-      config.continuous = true;
+// Update a document.
+mutableDoc = (await database.document(mutableDoc.id))?.toMutable()?.setString("language", "Dart");
 
-      // Using self signed certificate
-      config.pinnedServerCertificate = "assets/cert-android.cer";
-      config.authenticator = BasicAuthenticator(username, password);
-      replicator = Replicator(config);
+if (mutableDoc != null) {
+  // Save it to the database.
+  try {
+    await database.saveDocument(mutableDoc);
 
-      replicator.addChangeListener((ReplicatorChange event) {
-        if (event.status.error != null) {
-          print("Error: " + event.status.error);
-        }
+    var document = await database.document(mutableDoc.id);
 
-        print(event.status.activity.toString());
-      });
-
-      await replicator.start();
-      return true;
-    } on PlatformException {
-      return false;
-    }
-  }
-
-  Future<void> logout() async {
-    await Future.wait(pendingListeners);
-    replicator.removeChangeListener(_replicatorListenerToken);
-    _replicatorListenerToken =
-        replicator.addChangeListener((ReplicatorChange event) async {
-      if (event.status.activity == ReplicatorActivityLevel.stopped) {
-        await database.close();
-        await replicator.dispose();
-        _replicatorListenerToken = null;
-      }
-    });
-    await replicator.stop();
-  }
-
-  Future<Map<String, dynamic>> createDocument(Map<String, dynamic> map) async {
-    var id = "mydocument::${Uuid().v1()}";
-
-    try {
-      String documentId = await database.saveDocumentWithId(id, Document(map));
-      var newDoc = Map.from(map);
-      newDoc["id"] = documentId;
-      return newDoc;
-    } on PlatformException {
-      return null;
-    }
-  }
-
-  ObservableResponse<ResultSet> getMyDocument(String documentId) {
-    final stream = BehaviorSubject<ResultSet>();
-    // Execute a query and then post results and all changes to the stream
-
-    final Query query = QueryBuilder.select([
-      SelectResult.expression(Meta.id.from("mydocs")).As("id"),
-      SelectResult.expression(Expression.property("foo").from("mydocs")),
-      SelectResult.expression(Expression.property("bar").from("mydocs")),
-    ])
-        .from(dbName, as: "mydocs")
-        .where(Meta.id.from("mydocs").equalTo(Expression.string(documentId)));
-
-    final processResults = (ResultSet results) {
-      if (!stream.isClosed) {
-        stream.add(results);
-      }
-    };
-
-    return _buildObservableQueryResponse(stream, query, processResults);
-  }
-
-  ObservableResponse<T> _buildObservableQueryResponse<T>(
-      BehaviorSubject<T> subject,
-      Query query,
-      ResultSetCallback resultsCallback) {
-    final futureToken = query.addChangeListener((change) {
-      if (change.results != null) {
-        resultsCallback(change.results);
-      }
-    });
-
-    final removeListener = () {
-      final newFuture = futureToken.then((token) async {
-        if (token != null) {
-          await query.removeChangeListener(token);
-        }
-      });
-
-      pendingListeners.add(newFuture);
-      newFuture.whenComplete(() {
-        pendingListeners.remove(newFuture);
-      });
-    };
-
-    try {
-      query.execute().then(resultsCallback);
-    } on PlatformException {
-      removeListener();
-      rethrow;
-    }
-
-    return ObservableResponse<T>(subject.debounce(Duration(seconds: 1)), () {
-      removeListener();
-      subject.close();
-    });
+    // Log the document ID (generated by the database)
+    // and properties
+    print("Document ID :: ${document.id}");
+    print("Learning ${document.getString("language")}");
+  } on PlatformException {
+    return "Error saving document";
   }
 }
+
+// Create a query to fetch documents of type SDK.
+var query = QueryBuilder
+    .select([SelectResult.all().from("mydocs")])
+    .from("gettingStarted", as: "mydocs")
+    .where(Expression.property("type").from("mydocs").equalTo(Expression.string("SDK")));
+
+// Run the query.
+try {
+  var result = await query.execute();
+  print("Number of rows :: ${result.allResults().length}");
+} on PlatformException {
+  return "Error running the query";
+}
+
+// Note wss://10.0.2.2:4984/my-database is for the android simulator on your local machine's couchbase database
+// Create replicators to push and pull changes to and from the cloud.
+ReplicatorConfiguration config =
+ReplicatorConfiguration(database, "ws://10.0.2.2:4984/beer-sample");
+config.replicatorType = ReplicatorType.pushAndPull;
+config.continuous = true;
+
+// Add authentication.
+config.authenticator = BasicAuthenticator("foo", "bar");
+
+// Create replicator (make sure to add an instance or static variable named replicator)
+var replicator = Replicator(config);
+
+// Listen to replicator change events.
+_listenerToken = replicator.addChangeListener((ReplicatorChange event) {
+  if (event.status.error != null) {
+    print("Error: " + event.status.error);
+  }
+
+  print(event.status.activity.toString());
+});
+
+// Start replication.
+await replicator.start();
 ```
 
-```dart
-class ObservableResponse<T> {
-  ObservableResponse(this.result, this.onDispose);
+For this getting started guide, you will need to allow using ws protocol.
 
-  final Observable<T> result;
-  final VoidFunc onDispose;
+As of Android Pie, version 9, API 28, cleartext support is disabled, by default. Although wss: protocol URLs are not affected, in order to use the ws: protocol, applications must target API 27 or lower, or must configure application network security as described [here](https://developer.android.com/training/articles/security-config#CleartextTrafficPermitted).
 
-  void dispose() {
-    if (onDispose != null) {
-      // Do operations here like closing streams and removing listeners
-      onDispose();
-    }
-  }
-}
+```xml
+<application android:usesCleartextTraffic="true">
+</application>
+```
+
+App Transport Security is enabled by default since iOS 9 and enforces applications to use HTTPS exclusively. For this getting started guide, you will disable it but we recommend to enable it in production (and [enable HTTPS on Sync Gateway](https://docs.couchbase.com/sync-gateway/2.7/security.html#connection-to-sync-gateway)). In the Xcode navigator, right-click on Info.plist and open it as a source file.
+
+Append the following inside of the <dict> XML tags to disable ATS.
+
+```xml
+<key>NSAppTransportSecurity</key>
+<dict>
+<key>NSAllowsArbitraryLoads</key><true/>
+</dict>
 ```
