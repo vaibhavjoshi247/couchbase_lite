@@ -1,3 +1,13 @@
+## 3.0.0-nullsafety.2
+
+* Update Android library to version 2.8.6
+* Migrate the example app to null safety
+* Fix a down cast issue
+
+## 3.0.0-nullsafety.1
+
+* Added setting logging level feature 
+
 ## 3.0.0-nullsafety.0
 
 * Migrate to NNDB
