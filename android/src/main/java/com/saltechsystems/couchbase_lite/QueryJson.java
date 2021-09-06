@@ -591,7 +591,7 @@ class QueryJson {
 //                        break;
                     case ("in"):
                         List inParams = QueryMap.getListOfMapFromGenericList(currentExpression.get("in"));
-                        Log.d("Couch_Debug", "inParams: " + inParams);
+
                         if (inParams != null && !inParams.isEmpty()) {
                             Expression[] inExpressions = new Expression[inParams.size()];
                             for (int k = 0; k < inParams.size(); k++) {
