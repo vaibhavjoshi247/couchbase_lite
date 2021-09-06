@@ -1,7 +1,5 @@
 package com.saltechsystems.couchbase_lite;
 
-import android.util.Log;
-
 import com.couchbase.lite.ArrayExpression;
 import com.couchbase.lite.ArrayFunction;
 import com.couchbase.lite.DataSource;
@@ -591,14 +589,11 @@ class QueryJson {
 //                        break;
                     case ("in"):
                         List inParams = QueryMap.getListOfMapFromGenericList(currentExpression.get("in"));
-
-                        if (inParams != null && !inParams.isEmpty()) {
-                            Expression[] inExpressions = new Expression[inParams.size()];
-                            for (int k = 0; k < inParams.size(); k++) {
-                                inExpressions[k] = inflateExpressionFromArray(Collections.singletonList((Map<String, Object>) inParams.get(k)));
-                            }
-                            returnExpression = returnExpression.in(inExpressions);
+                        Expression[] inExpressions = new Expression[inParams.size()];
+                        for (int k = 0; k < inParams.size(); k++) {
+                            inExpressions[k] = inflateExpressionFromArray(Collections.singletonList((Map<String, Object>) inParams.get(k)));
                         }
+                        returnExpression = returnExpression.in(inExpressions);
                         break;
                     case ("arrayInAny"):
                     case ("satisfies"):
