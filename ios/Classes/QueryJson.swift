@@ -416,13 +416,12 @@ public class QueryJson {
                                 QueryMap.getListOfMapFromGenericList(objectList: secondaryValue))
                     )
                 case ("in", let value as Array<Any>, _):
-                    var expressions = Array<ExpressionProtocol>()
-                    value.forEach({
-                        expressions.append(inflateExpressionFromArray(expressionParametersArray:
-                            QueryMap.getListOfMapFromGenericList(objectList: $0)))
-                    })
-                    returnExpression = existingExpression
-                        .in(expressions)
+                    let inArray = QueryMap.getListOfMapFromGenericList(objectList: value)
+                    var inExpression = [ExpressionProtocol]();
+                    for data in inArray{
+                         inExpression.append(inflateExpressionFromArray(expressionParametersArray:[data]))
+                    }
+                    returnExpression = existingExpression.in(inExpression)
                  case ("arrayInAny", let value,_),("satisfies", let value,_):
                     let arrayInAny = QueryMap.getListOfMapFromGenericList(objectList: currentExpression["arrayInAny"] ?? [])
                     let satisfiesArray = QueryMap.getListOfMapFromGenericList(objectList: currentExpression["satisfies"] ?? [])
